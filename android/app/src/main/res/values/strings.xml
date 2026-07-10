@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Remindeme</string>
+    <string name="title_activity_main">Remindeme</string>
+    <string name="package_name">com.upview.remindeme</string>
+    <string name="custom_url_scheme">com.upview.remindeme</string>
+</resources>
