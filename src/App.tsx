@@ -45,7 +45,6 @@ function AppContent() {
     setView(createMode === 'reminder' ? 'reminders' : 'feed');
   };
 
-  const isOrganizer = profile?.is_organizer || profile?.role === 'admin';
   const isAdmin = profile?.role === 'admin';
 
   if (view === 'create' && user) {
@@ -54,7 +53,6 @@ function AppContent() {
         onBack={() => setView(createMode === 'event' ? 'feed' : 'reminders')}
         onCreated={handleCreated}
         initialMode={createMode}
-        isOrganizer={isOrganizer}
       />
     );
   }
@@ -103,7 +101,7 @@ function AppContent() {
             />
             {/* Center create button */}
             <button
-              onClick={() => handleCreate(isOrganizer ? 'event' : 'reminder')}
+              onClick={() => handleCreate('event')}
               className="relative -mt-8"
               aria-label="Create"
             >

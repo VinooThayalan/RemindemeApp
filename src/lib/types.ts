@@ -1,9 +1,14 @@
+export type EventVisibility = 'public' | 'closed' | 'private';
+
 export interface Event {
   id: string;
   name: string;
   event_date: string;
   end_date: string | null;
   timezone: string | null;
+  visibility: EventVisibility;
+  shared_with_followers: boolean;
+  share_token: string | null;
   location: string | null;
   map_lat: number | null;
   map_lng: number | null;
@@ -12,6 +17,15 @@ export interface Event {
   participants: string | null;
   image_url: string | null;
   created_by: string;
+  created_at: string;
+}
+
+export interface EventInvitation {
+  id: string;
+  event_id: string;
+  email: string;
+  invited_by: string;
+  status: 'pending' | 'accepted';
   created_at: string;
 }
 

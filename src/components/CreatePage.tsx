@@ -1,21 +1,47 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import type { CreateMode } from '../lib/types';
+import type { CreateMode, EventVisibility } from '../lib/types';
 import { fromLocalInput, fromDateAndTime, formatFullDate, formatCountdown, COMMON_TIMEZONES } from '../lib/time';
 import {
   Camera, X, Check, ChevronLeft, Bell, CalendarPlus,
   MapPin, Link2, FileText, Users, StickyNote, Clock, Globe,
+  Globe2, Lock, Mail, Plus, Share2,
 } from 'lucide-react';
 
 interface CreatePageProps {
   onBack: () => void;
   onCreated: () => void;
   initialMode?: CreateMode;
-  isOrganizer?: boolean;
 }
 
-export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrganizer = false }: CreatePageProps) {
+const VISIBILITY_OPTIONS: {
+  value: EventVisibility;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    value: 'public',
+    label: 'Public Event',
+    description: 'Visible to everyone in the feed and calendar',
+    icon: <Globe2 size={16} className="text-emerald-400" />,
+  },
+  {
+    value: 'closed',
+    label: 'Closed Group',
+    description: 'Invite people by email or share a private link',
+    icon: <Users size={16} className="text-amber-400" />,
+  },
+  {
+    value: 'private',
+    label: 'Private Event',
+    description: 'Only you can see it — optionally share with followers',
+    icon: <Lock size={16} className="text-sky-400" />,
+  },
+];
+
+export function CreatePage({ onBack, onCreated, initialMode = 'reminder' }: CreatePageProps) {
   const { user } = useAuth();
   const [mode, setMode] = useState<CreateMode>(initialMode);
   const [saving, setSaving] = useState(false);
@@ -23,9 +49,7 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
   const [savedPreview, setSavedPreview] = useState<{ name: string; date: string; mode: CreateMode } | null>(null);
 
   const [name, setName] = useState('');
-  // Reminder mode still uses a single datetime-local for convenience
   const [dateTime, setDateTime] = useState('');
-  // Event mode uses separate date + time + end date + timezone
   const [startDate, setStartDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -37,6 +61,11 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
   const [participants, setParticipants] = useState('');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
+
+  const [visibility, setVisibility] = useState<EventVisibility>('public');
+  const [sharedWithFollowers, setSharedWithFollowers] = useState(false);
+  const [inviteEmails, setInviteEmails] = useState<string[]>([]);
+  const [emailInput, setEmailInput] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -51,6 +80,18 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
     if (uploadError) { setError('Failed to upload image: ' + uploadError.message); return; }
     const { data } = supabase.storage.from('event-images').getPublicUrl(fileName);
     setImageUrl(data.publicUrl);
+  };
+
+  const addEmail = () => {
+    const trimmed = emailInput.trim().toLowerCase();
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
+    if (inviteEmails.includes(trimmed)) return;
+    setInviteEmails([...inviteEmails, trimmed]);
+    setEmailInput('');
+  };
+
+  const removeEmail = (email: string) => {
+    setInviteEmails(inviteEmails.filter((e) => e !== email));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -78,13 +119,29 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
     } else {
       const isoStart = fromDateAndTime(startDate, startTime);
       const isoEnd = endDate ? fromDateAndTime(endDate, endTime || '23:59') : null;
-      const { error: dbError } = await supabase.from('events').insert({
+      const { data: eventData, error: dbError } = await supabase.from('events').insert({
         name, event_date: isoStart, end_date: isoEnd,
         timezone: timezone || null, location: location || null,
         ticket_url: ticketUrl || null, agenda: agenda || null,
         participants: participants || null, image_url: imageUrl,
-      });
+        visibility, shared_with_followers: visibility === 'private' ? sharedWithFollowers : false,
+      }).select().single();
+
       if (dbError) { setError(dbError.message); setSaving(false); return; }
+
+      if (visibility === 'closed' && inviteEmails.length > 0 && eventData) {
+        const invites = inviteEmails.map((email) => ({
+          event_id: eventData.id,
+          email,
+          invited_by: user.id,
+        }));
+        const { error: inviteError } = await supabase.from('event_invitations').insert(invites);
+        if (inviteError) {
+          setError('Event created, but some invitations failed: ' + inviteError.message);
+          setSaving(false);
+          return;
+        }
+      }
     }
 
     setSaving(false);
@@ -152,29 +209,27 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
           ) : <div className="w-10" />}
         </div>
 
-        {/* Mode toggle — only show event option for organizers */}
-        {isOrganizer && (
-          <div className="px-4 pb-3">
-            <div className="flex bg-slate-800 rounded-xl p-1">
-              <button
-                onClick={() => setMode('reminder')}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition ${
-                  mode === 'reminder' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <Bell size={14} /> Reminder
-              </button>
-              <button
-                onClick={() => setMode('event')}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition ${
-                  mode === 'event' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <CalendarPlus size={14} /> Event
-              </button>
-            </div>
+        {/* Mode toggle — always available to all users */}
+        <div className="px-4 pb-3">
+          <div className="flex bg-slate-800 rounded-xl p-1">
+            <button
+              onClick={() => setMode('reminder')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition ${
+                mode === 'reminder' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              <Bell size={14} /> Reminder
+            </button>
+            <button
+              onClick={() => setMode('event')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition ${
+                mode === 'event' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              <CalendarPlus size={14} /> Event
+            </button>
           </div>
-        )}
+        </div>
       </div>
 
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileUpload} className="hidden" />
@@ -269,6 +324,111 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
                 ))}
               </select>
             </Field>
+
+            {/* Visibility selector */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 px-1">Event Type</p>
+              <div className="space-y-2">
+                {VISIBILITY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setVisibility(opt.value)}
+                    className={`w-full text-left rounded-xl border p-3.5 transition flex items-center gap-3 ${
+                      visibility === opt.value
+                        ? 'bg-slate-700/60 border-sky-500'
+                        : 'bg-slate-800 border-slate-700 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="shrink-0 w-9 h-9 rounded-lg bg-slate-900/60 flex items-center justify-center">
+                      {opt.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-semibold ${visibility === opt.value ? 'text-white' : 'text-slate-300'}`}>{opt.label}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{opt.description}</p>
+                    </div>
+                    {visibility === opt.value && (
+                      <Check size={16} className="text-sky-400 shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Closed group: email invitations */}
+            {visibility === 'closed' && (
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700/60 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Mail size={14} className="text-amber-400" />
+                  <p className="text-sm font-semibold text-slate-200">Invite by email</p>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    placeholder="friend@example.com"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEmail(); } }}
+                    className="flex-1 px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 focus:border-amber-500 focus:outline-none text-sm text-white placeholder-slate-500 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={addEmail}
+                    className="px-3 py-2.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 text-sm font-medium transition flex items-center gap-1"
+                  >
+                    <Plus size={14} /> Add
+                  </button>
+                </div>
+                {inviteEmails.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {inviteEmails.map((email) => (
+                      <span
+                        key={email}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-700 text-xs text-slate-300"
+                      >
+                        {email}
+                        <button
+                          type="button"
+                          onClick={() => removeEmail(email)}
+                          className="text-slate-500 hover:text-red-400 transition"
+                        >
+                          <X size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-slate-500">
+                  A share link will be generated after creation — you can also invite people with that.
+                </p>
+              </div>
+            )}
+
+            {/* Private: share with followers toggle */}
+            {visibility === 'private' && (
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700/60 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-sky-900/50 flex items-center justify-center shrink-0">
+                      <Share2 size={16} className="text-sky-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-200">Share with followers</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Let your followers see and set reminders for this event</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSharedWithFollowers(!sharedWithFollowers)}
+                    className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                      sharedWithFollowers ? 'bg-sky-500' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${sharedWithFollowers ? 'translate-x-5' : ''}`} />
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
 

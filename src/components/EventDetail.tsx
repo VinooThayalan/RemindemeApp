@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Event, EventReminder, UserProfile } from '../lib/types';
+import type { Event, EventReminder, EventInvitation, UserProfile } from '../lib/types';
 import { useAuth } from '../context/AuthContext';
 import { formatFullDate, formatCountdown, toLocalInput, formatInTimezone, timezoneLabel } from '../lib/time';
 import {
   ChevronLeft, MapPin, Ticket, Users, FileText, Bell, Trash2,
   ExternalLink, Flag, EyeOff, X, Check, UserPlus, UserCheck, Share2, Clock, Globe,
+  Globe2, Lock, UsersRound, Mail, Plus, Copy,
 } from 'lucide-react';
 
 interface EventDetailProps {
@@ -26,6 +27,9 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [invitations, setInvitations] = useState<EventInvitation[]>([]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -55,9 +59,18 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
           .maybeSingle();
         setIsFollowing(!!followData);
       }
+
+      if (isOwner && event.visibility === 'closed') {
+        const { data: inviteData } = await supabase
+          .from('event_invitations')
+          .select('*')
+          .eq('event_id', event.id)
+          .order('created_at', { ascending: false });
+        setInvitations((inviteData as EventInvitation[]) ?? []);
+      }
     };
     load();
-  }, [user, event.id, event.created_by, isOwner]);
+  }, [user, event.id, event.created_by, isOwner, event.visibility]);
 
   const handleDelete = async () => {
     if (!confirm('Delete this event? This cannot be undone.')) return;
@@ -107,6 +120,16 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
     );
   }
 
+  const shareLink = event.share_token
+    ? `${window.location.origin}?event=${event.share_token}`
+    : '';
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 pb-10">
       {/* Hero */}
@@ -116,6 +139,7 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-black/40 to-transparent" />
           <TopBar onBack={onBack} event={event} user={user} onHide={handleHide} onReport={() => setShowReportModal(true)} />
           <div className="absolute bottom-4 left-4 right-4">
+            <div className="mb-2"><EventVisibilityBadge visibility={event.visibility} /></div>
             <h1 className="text-2xl font-bold text-white drop-shadow-lg leading-tight">{event.name}</h1>
           </div>
         </div>
@@ -127,6 +151,7 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
           }} />
           <TopBar onBack={onBack} event={event} user={user} onHide={handleHide} onReport={() => setShowReportModal(true)} />
           <div className="absolute bottom-4 left-4 right-4">
+            <div className="mb-2"><EventVisibilityBadge visibility={event.visibility} /></div>
             <h1 className="text-2xl font-bold text-white drop-shadow-lg leading-tight">{event.name}</h1>
           </div>
         </div>
@@ -269,6 +294,75 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
           </div>
         )}
 
+        {/* Closed group: share link & invitations management */}
+        {isOwner && event.visibility === 'closed' && (
+          <div className="rounded-2xl bg-slate-800/80 border border-slate-700/60 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-xs text-slate-500 uppercase tracking-wide font-medium">
+              <UsersRound size={14} className="text-amber-400" />
+              <span>Closed Group</span>
+            </div>
+
+            {shareLink && (
+              <div>
+                <p className="text-xs text-slate-500 mb-1.5">Share this link to invite people:</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-400 truncate">
+                    {shareLink}
+                  </div>
+                  <button
+                    onClick={handleCopyLink}
+                    className="shrink-0 p-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 transition"
+                  >
+                    {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {invitations.length > 0 && (
+              <div className="pt-2 border-t border-slate-700/60">
+                <p className="text-xs text-slate-500 mb-2">Invited ({invitations.length})</p>
+                <div className="space-y-1.5">
+                  {invitations.map((inv) => (
+                    <div key={inv.id} className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-slate-300 truncate">{inv.email}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                        inv.status === 'accepted'
+                          ? 'bg-emerald-900/40 text-emerald-400'
+                          : 'bg-slate-700 text-slate-400'
+                      }`}>
+                        {inv.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 text-sm font-semibold transition"
+            >
+              <Mail size={14} /> Invite by email
+            </button>
+          </div>
+        )}
+
+        {/* Private event: share link for owner */}
+        {isOwner && event.visibility === 'private' && (
+          <div className="rounded-2xl bg-slate-800/80 border border-slate-700/60 p-4">
+            <div className="flex items-center gap-2 text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">
+              <Lock size={14} className="text-sky-400" />
+              <span>Private Event</span>
+            </div>
+            <p className="text-sm text-slate-400">
+              {event.shared_with_followers
+                ? 'This event is visible to your followers.'
+                : 'This event is only visible to you.'}
+            </p>
+          </div>
+        )}
+
         {/* Owner actions */}
         {isOwner && (
           <button
@@ -298,6 +392,19 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
         <ReportModal
           eventId={event.id}
           onClose={() => setShowReportModal(false)}
+        />
+      )}
+
+      {/* Invite Modal */}
+      {showInviteModal && isOwner && (
+        <InviteModal
+          eventId={event.id}
+          existingEmails={invitations.map((i) => i.email)}
+          onClose={() => setShowInviteModal(false)}
+          onInvited={(newInvs) => {
+            setInvitations([...newInvs, ...invitations]);
+            setShowInviteModal(false);
+          }}
         />
       )}
     </div>
@@ -552,6 +659,28 @@ function ReportModal({ eventId, onClose }: { eventId: string; onClose: () => voi
   );
 }
 
+function EventVisibilityBadge({ visibility }: { visibility: string }) {
+  if (visibility === 'public') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-900/60 text-emerald-300 text-[10px] font-semibold border border-emerald-700/50 backdrop-blur-sm">
+        <Globe2 size={10} /> Public Event
+      </span>
+    );
+  }
+  if (visibility === 'closed') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-900/60 text-amber-300 text-[10px] font-semibold border border-amber-700/50 backdrop-blur-sm">
+        <UsersRound size={10} /> Closed Group
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-sky-900/60 text-sky-300 text-[10px] font-semibold border border-sky-700/50 backdrop-blur-sm">
+      <Lock size={10} /> Private Event
+    </span>
+  );
+}
+
 function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="rounded-2xl bg-slate-800/80 border border-slate-700/60 p-4">
@@ -560,6 +689,110 @@ function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: strin
         <span>{label}</span>
       </div>
       <p className="text-sm text-slate-300">{value}</p>
+    </div>
+  );
+}
+
+function InviteModal({
+  eventId,
+  existingEmails,
+  onClose,
+  onInvited,
+}: {
+  eventId: string;
+  existingEmails: string[];
+  onClose: () => void;
+  onInvited: (invitations: EventInvitation[]) => void;
+}) {
+  const { user } = useAuth();
+  const [emails, setEmails] = useState<string[]>([]);
+  const [input, setInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const addEmail = () => {
+    const trimmed = input.trim().toLowerCase();
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
+    if (emails.includes(trimmed) || existingEmails.includes(trimmed)) { setInput(''); return; }
+    setEmails([...emails, trimmed]);
+    setInput('');
+  };
+
+  const removeEmail = (email: string) => {
+    setEmails(emails.filter((e) => e !== email));
+  };
+
+  const handleSend = async () => {
+    if (emails.length === 0 || !user) return;
+    setSaving(true);
+    setError(null);
+    const invites = emails.map((email) => ({
+      event_id: eventId,
+      email,
+      invited_by: user.id,
+    }));
+    const { data, error: err } = await supabase
+      .from('event_invitations')
+      .insert(invites)
+      .select('*');
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    onInvited((data as EventInvitation[]) ?? []);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-4 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-white">Invite by Email</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 transition">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            type="email"
+            placeholder="friend@example.com"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEmail(); } }}
+            className="flex-1 px-3 py-2.5 rounded-lg bg-slate-800 border border-slate-700 focus:border-amber-500 focus:outline-none text-sm text-white placeholder-slate-500 transition"
+          />
+          <button
+            onClick={addEmail}
+            className="px-3 py-2.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 text-sm font-medium transition flex items-center gap-1"
+          >
+            <Plus size={14} /> Add
+          </button>
+        </div>
+
+        {emails.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {emails.map((email) => (
+              <span
+                key={email}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300"
+              >
+                {email}
+                <button onClick={() => removeEmail(email)} className="text-slate-500 hover:text-red-400 transition">
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {error && <p className="text-red-400 text-sm">{error}</p>}
+
+        <button
+          onClick={handleSend}
+          disabled={saving || emails.length === 0}
+          className="w-full py-3 rounded-xl bg-amber-500 text-white font-semibold text-sm hover:bg-amber-400 transition disabled:opacity-50"
+        >
+          {saving ? 'Sending...' : `Send ${emails.length} Invitation${emails.length !== 1 ? 's' : ''}`}
+        </button>
+      </div>
     </div>
   );
 }

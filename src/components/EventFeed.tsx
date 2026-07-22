@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import type { Event } from '../lib/types';
 import { formatCountdown, formatDateTime } from '../lib/time';
-import { MapPin, Ticket, Users, Calendar, Search, SlidersHorizontal, Bell } from 'lucide-react';
+import { MapPin, Ticket, Users, Calendar, Search, SlidersHorizontal, Bell, Globe2, Lock, UsersRound } from 'lucide-react';
 
 interface EventFeedProps {
   onSelectEvent: (event: Event) => void;
@@ -247,6 +247,9 @@ function EventCard({
         </div>
       )}
       <div className="p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <VisibilityBadge visibility={event.visibility} />
+        </div>
         <h3 className="font-bold text-white text-base leading-tight">{event.name}</h3>
         <div className="mt-2 space-y-1.5">
           <div className="flex items-center gap-2 text-sm text-slate-400">
@@ -274,5 +277,27 @@ function EventCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function VisibilityBadge({ visibility }: { visibility: string }) {
+  if (visibility === 'public') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 text-[10px] font-semibold border border-emerald-800/40">
+        <Globe2 size={9} /> Public
+      </span>
+    );
+  }
+  if (visibility === 'closed') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 text-[10px] font-semibold border border-amber-800/40">
+        <UsersRound size={9} /> Closed Group
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-900/40 text-sky-400 text-[10px] font-semibold border border-sky-800/40">
+      <Lock size={9} /> Private
+    </span>
   );
 }
