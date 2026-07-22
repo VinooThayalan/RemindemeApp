@@ -2,6 +2,8 @@ export interface Event {
   id: string;
   name: string;
   event_date: string;
+  end_date: string | null;
+  timezone: string | null;
   location: string | null;
   map_lat: number | null;
   map_lng: number | null;

@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Event, EventReminder, UserProfile } from '../lib/types';
 import { useAuth } from '../context/AuthContext';
-import { formatFullDate, formatCountdown, toLocalInput } from '../lib/time';
+import { formatFullDate, formatCountdown, toLocalInput, formatInTimezone, timezoneLabel } from '../lib/time';
 import {
   ChevronLeft, MapPin, Ticket, Users, FileText, Bell, Trash2,
-  ExternalLink, Flag, EyeOff, X, Check, UserPlus, UserCheck, Share2,
+  ExternalLink, Flag, EyeOff, X, Check, UserPlus, UserCheck, Share2, Clock, Globe,
 } from 'lucide-react';
 
 interface EventDetailProps {
@@ -141,9 +141,24 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">When</p>
-              <p className="font-semibold text-slate-200 text-sm">{formatFullDate(event.event_date)}</p>
+              <p className="font-semibold text-slate-200 text-sm">{formatInTimezone(event.event_date, event.timezone)}</p>
+              {event.end_date && (
+                <div className="flex items-start gap-1.5 mt-1">
+                  <Clock size={12} className="text-slate-500 mt-0.5 shrink-0" />
+                  <p className="text-sm text-slate-400">
+                    <span className="text-slate-500">Ends: </span>
+                    {formatInTimezone(event.end_date, event.timezone)}
+                  </p>
+                </div>
+              )}
+              {event.timezone && (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Globe size={11} className="text-slate-500 shrink-0" />
+                  <p className="text-xs text-slate-500">{timezoneLabel(event.timezone)}</p>
+                </div>
+              )}
               {!isPast && (
-                <p className="text-sm font-semibold text-sky-400 mt-0.5">{formatCountdown(event.event_date)}</p>
+                <p className="text-sm font-semibold text-sky-400 mt-1">{formatCountdown(event.event_date)}</p>
               )}
             </div>
           </div>

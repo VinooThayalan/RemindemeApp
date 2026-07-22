@@ -2,10 +2,10 @@ import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import type { CreateMode } from '../lib/types';
-import { fromLocalInput, formatFullDate, formatCountdown } from '../lib/time';
+import { fromLocalInput, fromDateAndTime, formatFullDate, formatCountdown, COMMON_TIMEZONES } from '../lib/time';
 import {
   Camera, X, Check, ChevronLeft, Bell, CalendarPlus,
-  MapPin, Link2, FileText, Users, StickyNote,
+  MapPin, Link2, FileText, Users, StickyNote, Clock, Globe,
 } from 'lucide-react';
 
 interface CreatePageProps {
@@ -23,7 +23,14 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
   const [savedPreview, setSavedPreview] = useState<{ name: string; date: string; mode: CreateMode } | null>(null);
 
   const [name, setName] = useState('');
+  // Reminder mode still uses a single datetime-local for convenience
   const [dateTime, setDateTime] = useState('');
+  // Event mode uses separate date + time + end date + timezone
+  const [startDate, setStartDate] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [timezone, setTimezone] = useState('');
   const [location, setLocation] = useState('');
   const [ticketUrl, setTicketUrl] = useState('');
   const [agenda, setAgenda] = useState('');
@@ -49,20 +56,31 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!name || !dateTime) { setError('Name and date/time are required'); return; }
     if (!user) { setError('Please sign in first'); return; }
 
+    if (mode === 'reminder') {
+      if (!name || !dateTime) { setError('Name and date/time are required'); return; }
+    } else {
+      if (!name || !startDate) { setError('Name and start date are required'); return; }
+      if (endDate && new Date(`${endDate}T${endTime || '23:59'}`).getTime() < new Date(`${startDate}T${startTime || '00:00'}`).getTime()) {
+        setError('End date cannot be before the start date'); return;
+      }
+    }
+
     setSaving(true);
-    const isoDate = fromLocalInput(dateTime);
 
     if (mode === 'reminder') {
+      const isoDate = fromLocalInput(dateTime);
       const { error: dbError } = await supabase.from('reminders').insert({
         name, remind_at: isoDate, location: location || null, notes: notes || null,
       });
       if (dbError) { setError(dbError.message); setSaving(false); return; }
     } else {
+      const isoStart = fromDateAndTime(startDate, startTime);
+      const isoEnd = endDate ? fromDateAndTime(endDate, endTime || '23:59') : null;
       const { error: dbError } = await supabase.from('events').insert({
-        name, event_date: isoDate, location: location || null,
+        name, event_date: isoStart, end_date: isoEnd,
+        timezone: timezone || null, location: location || null,
         ticket_url: ticketUrl || null, agenda: agenda || null,
         participants: participants || null, image_url: imageUrl,
       });
@@ -70,7 +88,8 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
     }
 
     setSaving(false);
-    setSavedPreview({ name, date: isoDate, mode });
+    const previewDate = mode === 'reminder' ? fromLocalInput(dateTime) : fromDateAndTime(startDate, startTime);
+    setSavedPreview({ name, date: previewDate, mode });
   };
 
   if (savedPreview) {
@@ -186,15 +205,72 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder', isOrga
           />
         </Field>
 
-        <Field label="Date & Time" required>
-          <input
-            type="datetime-local"
-            value={dateTime}
-            onChange={(e) => setDateTime(e.target.value)}
-            required
-            className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-white transition"
-          />
-        </Field>
+        {mode === 'reminder' ? (
+          <Field label="Date & Time" required>
+            <input
+              type="datetime-local"
+              value={dateTime}
+              onChange={(e) => setDateTime(e.target.value)}
+              required
+              className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-white transition"
+            />
+          </Field>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Start Date" required>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-white transition"
+                />
+              </Field>
+              <Field label="Start Time" icon={<Clock size={13} className="text-slate-500" />} hint="Optional — defaults to 12:00 AM">
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-white transition"
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="End Date" icon={<CalendarPlus size={13} className="text-slate-500" />} hint="Optional">
+                <input
+                  type="date"
+                  value={endDate}
+                  min={startDate || undefined}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-white transition"
+                />
+              </Field>
+              <Field label="End Time" icon={<Clock size={13} className="text-slate-500" />} hint="Optional">
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  disabled={!endDate}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-white transition disabled:opacity-40"
+                />
+              </Field>
+            </div>
+
+            <Field label="Timezone" icon={<Globe size={13} className="text-slate-500" />} hint="Defaults to your device timezone">
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-white transition"
+              >
+                {COMMON_TIMEZONES.map((tz) => (
+                  <option key={tz.value} value={tz.value}>{tz.label}</option>
+                ))}
+              </select>
+            </Field>
+          </>
+        )}
 
         <Field label="Location" icon={<MapPin size={13} className="text-slate-500" />}>
           <input
@@ -272,20 +348,25 @@ function Field({
   label,
   icon,
   required,
+  hint,
   children,
 }: {
   label: string;
   icon?: React.ReactNode;
   required?: boolean;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 px-1">
-        {icon}
-        {label}
-        {required && <span className="text-red-400">*</span>}
-      </label>
+      <div className="flex items-center justify-between mb-1.5 px-1">
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          {icon}
+          {label}
+          {required && <span className="text-red-400">*</span>}
+        </label>
+        {hint && <span className="text-[10px] text-slate-600 font-normal normal-case tracking-normal">{hint}</span>}
+      </div>
       {children}
     </div>
   );
