@@ -7,6 +7,7 @@ import {
   Camera, X, Check, ChevronLeft, Bell, CalendarPlus,
   MapPin, Link2, FileText, Users, StickyNote, Clock, Globe,
   Globe2, Lock, Mail, Plus, Share2, ScanLine, Loader2, Sparkles,
+  ListTree, Trash2,
 } from 'lucide-react';
 
 interface CreatePageProps {
@@ -84,6 +85,9 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder' }: Crea
   const [reminderShared, setReminderShared] = useState(false);
   const [reminderInviteEmails, setReminderInviteEmails] = useState<string[]>([]);
   const [reminderEmailInput, setReminderEmailInput] = useState('');
+
+  // Sub-events
+  const [subEvents, setSubEvents] = useState<{ title: string; start_date: string; start_time: string; end_date: string; end_time: string; description: string }[]>([]);
 
   // Poster scanning
   const [scanning, setScanning] = useState(false);
@@ -214,6 +218,21 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder' }: Crea
     setReminderInviteEmails(reminderInviteEmails.filter((e) => e !== email));
   };
 
+  const addSubEvent = () => {
+    setSubEvents([...subEvents, {
+      title: '', start_date: startDate, start_time: '',
+      end_date: '', end_time: '', description: '',
+    }]);
+  };
+
+  const updateSubEvent = (index: number, field: string, value: string) => {
+    setSubEvents(subEvents.map((s, i) => i === index ? { ...s, [field]: value } : s));
+  };
+
+  const removeSubEvent = (index: number) => {
+    setSubEvents(subEvents.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -276,6 +295,27 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder' }: Crea
           setError('Event created, but some invitations failed: ' + inviteError.message);
           setSaving(false);
           return;
+        }
+      }
+
+      if (subEvents.length > 0 && eventData) {
+        const subEventData = subEvents
+          .filter((s) => s.title && s.start_date)
+          .map((s, i) => ({
+            event_id: eventData.id,
+            title: s.title,
+            start_time: fromDateAndTime(s.start_date, s.start_time || '00:00'),
+            end_time: s.end_date ? fromDateAndTime(s.end_date, s.end_time || '23:59') : null,
+            description: s.description || null,
+            sort_order: i,
+          }));
+        if (subEventData.length > 0) {
+          const { error: subError } = await supabase.from('sub_events').insert(subEventData);
+          if (subError) {
+            setError('Event created, but sub-events failed: ' + subError.message);
+            setSaving(false);
+            return;
+          }
         }
       }
     }
@@ -735,6 +775,97 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder' }: Crea
                 className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-white placeholder-slate-500 transition"
               />
             </Field>
+
+            {/* Sub-events builder */}
+            <div className="rounded-xl bg-slate-800/60 border border-slate-700/60 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ListTree size={14} className="text-sky-400" />
+                  <p className="text-sm font-semibold text-slate-200">Sub-events</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addSubEvent}
+                  className="flex items-center gap-1 text-xs font-medium text-sky-400 hover:text-sky-300 transition"
+                >
+                  <Plus size={13} /> Add
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">
+                Break your event into scheduled segments. Users can select which ones to set reminders for.
+              </p>
+              {subEvents.map((sub, index) => (
+                <div key={index} className="rounded-lg bg-slate-900/60 border border-slate-700/50 p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Sub-event title"
+                      value={sub.title}
+                      onChange={(e) => updateSubEvent(index, 'title', e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-sm text-white placeholder-slate-500 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeSubEvent(index)}
+                      className="p-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-900/20 transition"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-500 mb-0.5 block">Start date</label>
+                      <input
+                        type="date"
+                        value={sub.start_date}
+                        onChange={(e) => updateSubEvent(index, 'start_date', e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-lg bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-sm text-white transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 mb-0.5 block">Start time</label>
+                      <input
+                        type="time"
+                        value={sub.start_time}
+                        onChange={(e) => updateSubEvent(index, 'start_time', e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-lg bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-sm text-white transition"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-500 mb-0.5 block">End date (opt.)</label>
+                      <input
+                        type="date"
+                        value={sub.end_date}
+                        onChange={(e) => updateSubEvent(index, 'end_date', e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-lg bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-sm text-white transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 mb-0.5 block">End time (opt.)</label>
+                      <input
+                        type="time"
+                        value={sub.end_time}
+                        onChange={(e) => updateSubEvent(index, 'end_time', e.target.value)}
+                        disabled={!sub.end_date}
+                        className="w-full px-2.5 py-2 rounded-lg bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-sm text-white transition disabled:opacity-40"
+                      />
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Description (optional)"
+                    value={sub.description}
+                    onChange={(e) => updateSubEvent(index, 'description', e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 focus:border-sky-500 focus:outline-none text-sm text-white placeholder-slate-500 transition"
+                  />
+                </div>
+              ))}
+              {subEvents.length === 0 && (
+                <p className="text-xs text-slate-600 italic">No sub-events added yet.</p>
+              )}
+            </div>
           </>
         )}
 

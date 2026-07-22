@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import type { Event } from '../lib/types';
+import type { Event, RsvpStatus } from '../lib/types';
 import { formatCountdown, formatDateTime } from '../lib/time';
-import { MapPin, Ticket, Users, Calendar, Search, SlidersHorizontal, Bell, Globe2, Lock, UsersRound } from 'lucide-react';
+import { MapPin, Ticket, Users, Calendar, Search, SlidersHorizontal, Bell, Globe2, Lock, UsersRound, UserCheck } from 'lucide-react';
 
 interface EventFeedProps {
   onSelectEvent: (event: Event) => void;
@@ -18,6 +18,7 @@ export function EventFeed({ onSelectEvent }: EventFeedProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+  const [rsvpCounts, setRsvpCounts] = useState<Record<string, number>>({});
   const [showFilters, setShowFilters] = useState(false);
 
   const fetchEvents = useCallback(async () => {
@@ -48,6 +49,18 @@ export function EventFeed({ onSelectEvent }: EventFeedProps) {
     ]);
     if (hiddenRes.data) setHiddenIds(new Set(hiddenRes.data.map((r) => r.event_id)));
     if (reminderRes.data) setReminderEventIds(new Set(reminderRes.data.map((r) => r.event_id)));
+
+    const { data: rsvpData } = await supabase
+      .from('event_rsvps')
+      .select('event_id, status')
+      .eq('status', 'going');
+    if (rsvpData) {
+      const counts: Record<string, number> = {};
+      rsvpData.forEach((r: { event_id: string; status: RsvpStatus }) => {
+        counts[r.event_id] = (counts[r.event_id] || 0) + 1;
+      });
+      setRsvpCounts(counts);
+    }
   }, [user]);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
@@ -156,6 +169,7 @@ export function EventFeed({ onSelectEvent }: EventFeedProps) {
                       key={event.id}
                       event={event}
                       hasReminder={reminderEventIds.has(event.id)}
+                      goingCount={rsvpCounts[event.id] || 0}
                       onClick={() => onSelectEvent(event)}
                     />
                   ))}
@@ -173,6 +187,7 @@ export function EventFeed({ onSelectEvent }: EventFeedProps) {
                       key={event.id}
                       event={event}
                       hasReminder={reminderEventIds.has(event.id)}
+                      goingCount={rsvpCounts[event.id] || 0}
                       onClick={() => onSelectEvent(event)}
                     />
                   ))}
@@ -189,10 +204,12 @@ export function EventFeed({ onSelectEvent }: EventFeedProps) {
 function EventCard({
   event,
   hasReminder,
+  goingCount,
   onClick,
 }: {
   event: Event;
   hasReminder: boolean;
+  goingCount: number;
   onClick: () => void;
 }) {
   const isPast = new Date(event.event_date).getTime() <= Date.now();
@@ -272,6 +289,12 @@ function EventCard({
             <div className="flex items-center gap-2 text-sm text-emerald-400">
               <Ticket size={13} className="shrink-0" />
               <span>Tickets available</span>
+            </div>
+          )}
+          {goingCount > 0 && (
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <UserCheck size={13} className="shrink-0 text-emerald-400" />
+              <span>{goingCount} going</span>
             </div>
           )}
         </div>

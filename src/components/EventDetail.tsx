@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Event, EventReminder, EventInvitation, UserProfile } from '../lib/types';
+import type { Event, EventReminder, EventInvitation, UserProfile, SubEvent, RsvpStatus } from '../lib/types';
 import { useAuth } from '../context/AuthContext';
 import { formatFullDate, formatCountdown, toLocalInput, formatInTimezone, timezoneLabel } from '../lib/time';
 import {
   ChevronLeft, MapPin, Ticket, Users, FileText, Bell, Trash2,
   ExternalLink, Flag, EyeOff, X, Check, UserPlus, UserCheck, Share2, Clock, Globe,
   Globe2, Lock, UsersRound, Mail, Plus, Copy,
+  ListTree, Circle, CheckCircle2, CalendarClock,
 } from 'lucide-react';
 
 interface EventDetailProps {
@@ -30,6 +31,12 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
   const [invitations, setInvitations] = useState<EventInvitation[]>([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [subEvents, setSubEvents] = useState<SubEvent[]>([]);
+  const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus | null>(null);
+  const [rsvpCounts, setRsvpCounts] = useState<Record<RsvpStatus, number>>({ going: 0, maybe: 0, not_going: 0 });
+  const [subEventReminders, setSubEventReminders] = useState<Set<string>>(new Set());
+  const [rsvpLoading, setRsvpLoading] = useState(false);
+  const [subReminderLoading, setSubReminderLoading] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -68,6 +75,30 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
           .order('created_at', { ascending: false });
         setInvitations((inviteData as EventInvitation[]) ?? []);
       }
+
+      const [subRes, rsvpAllRes, myRsvpRes, subRemRes] = await Promise.all([
+        supabase.from('sub_events').select('*').eq('event_id', event.id).order('sort_order', { ascending: true }),
+        supabase.from('event_rsvps').select('status').eq('event_id', event.id),
+        user ? supabase.from('event_rsvps').select('*').eq('event_id', event.id).eq('user_id', user.id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+        user ? supabase.from('event_reminders').select('remind_at').eq('user_id', user.id) : Promise.resolve({ data: null, error: null }),
+      ]);
+
+      if (subRes.data) setSubEvents(subRes.data as SubEvent[]);
+      if (rsvpAllRes.data) {
+        const counts = { going: 0, maybe: 0, not_going: 0 } as Record<RsvpStatus, number>;
+        rsvpAllRes.data.forEach((r: { status: RsvpStatus }) => { counts[r.status]++; });
+        setRsvpCounts(counts);
+      }
+      if (myRsvpRes.data) setRsvpStatus((myRsvpRes.data as { status: RsvpStatus }).status);
+
+      if (subRemRes.data && subRes.data) {
+        const reminderTimes = new Set((subRemRes.data as { remind_at: string }[]).map((r) => r.remind_at));
+        const matched = new Set<string>();
+        (subRes.data as SubEvent[]).forEach((s) => {
+          if (reminderTimes.has(s.start_time)) matched.add(s.id);
+        });
+        setSubEventReminders(matched);
+      }
     };
     load();
   }, [user, event.id, event.created_by, isOwner, event.visibility]);
@@ -85,6 +116,36 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
     await supabase.from('hidden_events').insert({ event_id: event.id });
     setHidden(true);
     setTimeout(() => onBack(), 800);
+  };
+
+  const handleRsvp = async (status: RsvpStatus) => {
+    if (!user) return;
+    setRsvpLoading(true);
+    const newStatus = rsvpStatus === status ? null : status;
+    if (newStatus) {
+      await supabase.from('event_rsvps').upsert({ event_id: event.id, user_id: user.id, status: newStatus }, { onConflict: 'event_id,user_id' });
+    } else {
+      await supabase.from('event_rsvps').delete().eq('event_id', event.id).eq('user_id', user.id);
+    }
+    const { data: allRsvp } = await supabase.from('event_rsvps').select('status').eq('event_id', event.id);
+    const counts = { going: 0, maybe: 0, not_going: 0 } as Record<RsvpStatus, number>;
+    allRsvp?.forEach((r: { status: RsvpStatus }) => { counts[r.status]++; });
+    setRsvpCounts(counts);
+    setRsvpStatus(newStatus);
+    setRsvpLoading(false);
+  };
+
+  const toggleSubEventReminder = async (sub: SubEvent) => {
+    if (!user) return;
+    setSubReminderLoading(sub.id);
+    if (subEventReminders.has(sub.id)) {
+      await supabase.from('event_reminders').delete().eq('event_id', event.id).eq('user_id', user.id).eq('remind_at', sub.start_time);
+      setSubEventReminders((prev) => { const n = new Set(prev); n.delete(sub.id); return n; });
+    } else {
+      await supabase.from('event_reminders').insert({ event_id: event.id, remind_at: sub.start_time, notes: sub.title });
+      setSubEventReminders((prev) => new Set(prev).add(sub.id));
+    }
+    setSubReminderLoading(null);
   };
 
   const handleFollow = async () => {
@@ -215,6 +276,87 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
                 {isFollowing ? 'Following' : 'Follow'}
               </button>
             )}
+          </div>
+        )}
+
+        {/* RSVP section */}
+        {user && !isPast && (
+          <div className="rounded-2xl bg-slate-800/80 border border-slate-700/60 p-4">
+            <div className="flex items-center gap-2 text-xs text-slate-500 uppercase tracking-wide font-medium mb-3">
+              <Users size={14} />
+              <span>RSVP</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { value: 'going', label: 'Going', color: 'emerald', count: rsvpCounts.going },
+                { value: 'maybe', label: 'Maybe', color: 'amber', count: rsvpCounts.maybe },
+                { value: 'not_going', label: "Can't go", color: 'red', count: rsvpCounts.not_going },
+              ] as { value: RsvpStatus; label: string; color: string; count: number }[]).map((opt) => {
+                const active = rsvpStatus === opt.value;
+                const colorClasses: Record<string, { active: string; idle: string; text: string }> = {
+                  emerald: { active: 'bg-emerald-500/30 border-emerald-500 text-emerald-300', idle: 'bg-slate-900 border-slate-700 text-slate-400 hover:border-emerald-600/50', text: 'text-emerald-400' },
+                  amber: { active: 'bg-amber-500/30 border-amber-500 text-amber-300', idle: 'bg-slate-900 border-slate-700 text-slate-400 hover:border-amber-600/50', text: 'text-amber-400' },
+                  red: { active: 'bg-red-500/30 border-red-500 text-red-300', idle: 'bg-slate-900 border-slate-700 text-slate-400 hover:border-red-600/50', text: 'text-red-400' },
+                };
+                const c = colorClasses[opt.color];
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => handleRsvp(opt.value)}
+                    disabled={rsvpLoading}
+                    className={`rounded-xl border py-3 px-2 text-center transition disabled:opacity-50 ${active ? c.active : c.idle}`}
+                  >
+                    <p className="text-sm font-semibold">{opt.label}</p>
+                    <p className={`text-xs mt-0.5 ${active ? c.text : 'text-slate-500'}`}>{opt.count}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Sub-events list */}
+        {subEvents.length > 0 && (
+          <div className="rounded-2xl bg-slate-800/80 border border-slate-700/60 p-4">
+            <div className="flex items-center gap-2 text-xs text-slate-500 uppercase tracking-wide font-medium mb-3">
+              <ListTree size={14} className="text-sky-400" />
+              <span>Sub-events</span>
+            </div>
+            <p className="text-xs text-slate-500 mb-3">Tap to set individual reminders for each segment.</p>
+            <div className="space-y-2">
+              {subEvents.map((sub) => {
+                const hasReminder = subEventReminders.has(sub.id);
+                const subPast = new Date(sub.start_time).getTime() <= Date.now();
+                return (
+                  <button
+                    key={sub.id}
+                    onClick={() => toggleSubEventReminder(sub)}
+                    disabled={subReminderLoading === sub.id || subPast || !user}
+                    className="w-full flex items-start gap-3 rounded-xl border p-3 text-left transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      backgroundColor: hasReminder ? 'rgba(56,189,248,0.08)' : 'rgba(15,23,42,0.6)',
+                      borderColor: hasReminder ? 'rgba(56,189,248,0.5)' : 'rgba(51,65,85,0.6)',
+                    }}
+                  >
+                    <div className="shrink-0 mt-0.5">
+                      {hasReminder
+                        ? <CheckCircle2 size={18} className="text-sky-400" />
+                        : <Circle size={18} className="text-slate-600" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-200">{sub.title}</p>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
+                        <CalendarClock size={11} />
+                        <span>{formatInTimezone(sub.start_time, event.timezone)}</span>
+                      </div>
+                      {sub.description && (
+                        <p className="text-xs text-slate-500 mt-1">{sub.description}</p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 

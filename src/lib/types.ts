@@ -38,6 +38,27 @@ export interface ReminderInvitation {
   created_at: string;
 }
 
+export interface SubEvent {
+  id: string;
+  event_id: string;
+  title: string;
+  start_time: string;
+  end_time: string | null;
+  description: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export type RsvpStatus = 'going' | 'maybe' | 'not_going';
+
+export interface EventRsvp {
+  id: string;
+  event_id: string;
+  user_id: string;
+  status: RsvpStatus;
+  created_at: string;
+}
+
 export interface Reminder {
   id: string;
   name: string;
