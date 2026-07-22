@@ -68,4 +68,4 @@ export interface HiddenEvent {
 }
 
 export type CreateMode = 'reminder' | 'event';
-export type View = 'feed' | 'detail' | 'reminders' | 'create' | 'profile' | 'admin';
+export type View = 'feed' | 'detail' | 'reminders' | 'create' | 'profile' | 'admin' | 'calendar';

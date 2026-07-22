@@ -7,8 +7,9 @@ import { EventDetail } from './components/EventDetail';
 import { RemindersView } from './components/RemindersView';
 import { UserProfile } from './components/UserProfile';
 import { AdminDashboard } from './components/AdminDashboard';
+import { CalendarView } from './components/CalendarView';
 import type { Event, CreateMode, View } from './lib/types';
-import { Bell, Plus, Compass, User, ShieldCheck } from 'lucide-react';
+import { Bell, Plus, Compass, User, ShieldCheck, CalendarDays } from 'lucide-react';
 
 function AppContent() {
   const { user, profile, loading } = useAuth();
@@ -76,6 +77,7 @@ function AppContent() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="pb-24">
         {view === 'feed' && <EventFeed onSelectEvent={handleSelectEvent} />}
+        {view === 'calendar' && <CalendarView onSelectEvent={handleSelectEvent} />}
         {view === 'reminders' && user && <RemindersView />}
         {view === 'profile' && user && (
           <UserProfile onNavigate={(v) => setView(v)} />
@@ -94,10 +96,10 @@ function AppContent() {
               onClick={() => setView('feed')}
             />
             <NavButton
-              icon={<Bell size={20} />}
-              label="Reminders"
-              active={view === 'reminders'}
-              onClick={() => (user ? setView('reminders') : setView('reminders'))}
+              icon={<CalendarDays size={20} />}
+              label="Calendar"
+              active={view === 'calendar'}
+              onClick={() => setView('calendar')}
             />
             {/* Center create button */}
             <button
@@ -110,20 +112,24 @@ function AppContent() {
               </div>
             </button>
             <NavButton
+              icon={<Bell size={20} />}
+              label="Reminders"
+              active={view === 'reminders'}
+              onClick={() => (user ? setView('reminders') : setView('reminders'))}
+            />
+            <NavButton
               icon={<User size={20} />}
               label="Profile"
               active={view === 'profile'}
               onClick={() => setView('profile')}
             />
-            {isAdmin ? (
+            {isAdmin && (
               <NavButton
                 icon={<ShieldCheck size={20} />}
                 label="Admin"
                 active={view === 'admin'}
                 onClick={() => setView('admin')}
               />
-            ) : (
-              <div className="w-12" />
             )}
           </div>
         </div>
