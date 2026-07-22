@@ -3,13 +3,14 @@ import { supabase } from '../lib/supabase';
 import type { Reminder, EventReminder } from '../lib/types';
 import { useAuth } from '../context/AuthContext';
 import { formatCountdown, formatDateTime } from '../lib/time';
-import { Bell, MapPin, StickyNote, Trash2, Calendar, Share2, UserCheck } from 'lucide-react';
+import { Bell, MapPin, StickyNote, Trash2, Calendar, Share2, UserCheck, Image as ImageIcon } from 'lucide-react';
 
 export function RemindersView() {
   const { user } = useAuth();
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [eventReminders, setEventReminders] = useState<EventReminder[]>([]);
   const [sharedReminders, setSharedReminders] = useState<EventReminder[]>([]);
+  const [sharedPersonalReminders, setSharedPersonalReminders] = useState<(Reminder & { sharer_name?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'personal' | 'events' | 'shared'>('personal');
 
@@ -17,7 +18,7 @@ export function RemindersView() {
     if (!user) return;
     setLoading(true);
 
-    const [remindersRes, eventRemindersRes, sharedRes] = await Promise.all([
+    const [remindersRes, eventRemindersRes, sharedRes, sharedPersonalRes] = await Promise.all([
       supabase.from('reminders').select('*').order('remind_at', { ascending: true }),
       supabase
         .from('event_reminders')
@@ -30,11 +31,23 @@ export function RemindersView() {
         .neq('user_id', user.id)
         .eq('is_public', true)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('reminders')
+        .select('*, sharer:user_profiles!reminders_user_id_fkey(display_name)')
+        .neq('user_id', user.id)
+        .order('remind_at', { ascending: true }),
     ]);
 
     if (remindersRes.data) setReminders(remindersRes.data as Reminder[]);
     if (eventRemindersRes.data) setEventReminders(eventRemindersRes.data as EventReminder[]);
     if (sharedRes.data) setSharedReminders(sharedRes.data as EventReminder[]);
+    if (sharedPersonalRes.data) {
+      const mapped = (sharedPersonalRes.data as any[]).map((r) => ({
+        ...r,
+        sharer_name: r.sharer?.display_name,
+      }));
+      setSharedPersonalReminders(mapped);
+    }
     setLoading(false);
   }, [user]);
 
@@ -76,7 +89,7 @@ export function RemindersView() {
   const tabCount = {
     personal: reminders.length,
     events: eventReminders.length,
-    shared: sharedReminders.length,
+    shared: sharedReminders.length + sharedPersonalReminders.length,
   };
 
   return (
@@ -167,17 +180,28 @@ export function RemindersView() {
 
           {/* Shared tab */}
           {activeTab === 'shared' && (
-            sharedReminders.length === 0 ? (
+            sharedReminders.length === 0 && sharedPersonalReminders.length === 0 ? (
               <EmptyState
                 icon={<Share2 size={28} />}
                 text="Nothing shared yet"
-                sub="Follow organizers to see their event reminders here"
+                sub="Follow people to see their shared reminders here"
               />
             ) : (
-              <div className="space-y-3">
-                {sharedReminders.map((r) => (
-                  <SharedReminderCard key={r.id} reminder={r} onSetForMe={() => handleSetForMe(r)} />
-                ))}
+              <div className="space-y-6">
+                {sharedPersonalReminders.length > 0 && (
+                  <Section label="Shared Reminders">
+                    {sharedPersonalReminders.map((r) => (
+                      <SharedPersonalReminderCard key={r.id} reminder={r} />
+                    ))}
+                  </Section>
+                )}
+                {sharedReminders.length > 0 && (
+                  <Section label="Event Reminders from People You Follow">
+                    {sharedReminders.map((r) => (
+                      <SharedReminderCard key={r.id} reminder={r} onSetForMe={() => handleSetForMe(r)} />
+                    ))}
+                  </Section>
+                )}
               </div>
             )
           )}
@@ -210,31 +234,48 @@ function EmptyState({ icon, text, sub }: { icon: React.ReactNode; text: string; 
 
 function ReminderCard({ reminder, onDelete, past }: { reminder: Reminder; onDelete: () => void; past?: boolean }) {
   return (
-    <div className={`rounded-2xl border p-4 transition ${
+    <div className={`rounded-2xl border transition overflow-hidden ${
       past ? 'bg-slate-800/30 border-slate-800 opacity-60' : 'bg-slate-800/80 border-slate-700/60'
     }`}>
-      <div className="flex items-start gap-3">
-        <div className="shrink-0 w-10 h-10 rounded-xl bg-sky-900/50 flex items-center justify-center">
-          <Bell size={17} className="text-sky-400" />
+      {reminder.image_url && (
+        <div className="relative h-32">
+          <img src={reminder.image_url} alt={reminder.name} className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent" />
         </div>
-        <div className="flex-1 min-w-0">
-          <p className={`font-semibold text-slate-200 ${past ? 'line-through' : ''}`}>{reminder.name}</p>
-          <p className="text-sm text-slate-500 mt-0.5">{formatDateTime(reminder.remind_at)}</p>
-          {!past && <p className="text-sm font-semibold text-sky-400 mt-1">{formatCountdown(reminder.remind_at)}</p>}
-          {reminder.location && (
-            <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-1.5">
-              <MapPin size={12} /><span className="truncate">{reminder.location}</span>
-            </div>
-          )}
-          {reminder.notes && (
-            <div className="flex items-start gap-1.5 text-sm text-slate-500 mt-1">
-              <StickyNote size={12} className="mt-0.5 shrink-0" /><span>{reminder.notes}</span>
-            </div>
-          )}
+      )}
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${
+            reminder.image_url ? 'bg-black/40' : 'bg-sky-900/50'
+          }`}>
+            {reminder.image_url
+              ? <ImageIcon size={17} className="text-sky-300" />
+              : <Bell size={17} className="text-sky-400" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`font-semibold text-slate-200 ${past ? 'line-through' : ''}`}>{reminder.name}</p>
+            <p className="text-sm text-slate-500 mt-0.5">{formatDateTime(reminder.remind_at)}</p>
+            {!past && <p className="text-sm font-semibold text-sky-400 mt-1">{formatCountdown(reminder.remind_at)}</p>}
+            {reminder.location && (
+              <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-1.5">
+                <MapPin size={12} /><span className="truncate">{reminder.location}</span>
+              </div>
+            )}
+            {reminder.notes && (
+              <div className="flex items-start gap-1.5 text-sm text-slate-500 mt-1">
+                <StickyNote size={12} className="mt-0.5 shrink-0" /><span>{reminder.notes}</span>
+              </div>
+            )}
+            {reminder.shared_with_followers && (
+              <div className="flex items-center gap-1 text-xs text-sky-600 mt-1.5">
+                <Share2 size={10} /> Shared with followers
+              </div>
+            )}
+          </div>
+          <button onClick={onDelete} className="shrink-0 p-2 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-900/20 transition">
+            <Trash2 size={15} />
+          </button>
         </div>
-        <button onClick={onDelete} className="shrink-0 p-2 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-900/20 transition">
-          <Trash2 size={15} />
-        </button>
       </div>
     </div>
   );
@@ -269,6 +310,41 @@ function EventReminderCard({ reminder, onDelete, past }: { reminder: EventRemind
         <button onClick={onDelete} className="shrink-0 p-2 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-900/20 transition">
           <Trash2 size={15} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+function SharedPersonalReminderCard({ reminder }: { reminder: Reminder & { sharer_name?: string } }) {
+  return (
+    <div className="rounded-2xl bg-slate-800/80 border border-slate-700/60 overflow-hidden">
+      {reminder.image_url && (
+        <div className="relative h-32">
+          <img src={reminder.image_url} alt={reminder.name} className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent" />
+        </div>
+      )}
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${reminder.image_url ? 'bg-black/40' : 'bg-sky-900/50'}`}>
+            <Bell size={17} className="text-sky-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-slate-200">{reminder.name}</p>
+            <p className="text-sm text-slate-500 mt-0.5">{formatDateTime(reminder.remind_at)}</p>
+            <p className="text-sm font-semibold text-sky-400 mt-1">{formatCountdown(reminder.remind_at)}</p>
+            {reminder.location && (
+              <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-1.5">
+                <MapPin size={12} /><span className="truncate">{reminder.location}</span>
+              </div>
+            )}
+            {reminder.sharer_name && (
+              <div className="flex items-center gap-1.5 text-xs text-slate-600 mt-1.5">
+                <UserCheck size={10} /> Shared by {reminder.sharer_name}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -29,12 +29,24 @@ export interface EventInvitation {
   created_at: string;
 }
 
+export interface ReminderInvitation {
+  id: string;
+  reminder_id: string;
+  email: string;
+  invited_by: string;
+  status: 'pending' | 'accepted';
+  created_at: string;
+}
+
 export interface Reminder {
   id: string;
   name: string;
   remind_at: string;
   location: string | null;
   notes: string | null;
+  image_url: string | null;
+  shared_with_followers: boolean;
+  share_token: string | null;
   user_id: string;
   created_at: string;
 }
