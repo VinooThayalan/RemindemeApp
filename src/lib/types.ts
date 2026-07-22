@@ -1,4 +1,5 @@
 export type EventVisibility = 'public' | 'closed' | 'private';
+export type EventMode = 'online' | 'offline';
 
 export interface Event {
   id: string;
@@ -7,6 +8,7 @@ export interface Event {
   end_date: string | null;
   timezone: string | null;
   visibility: EventVisibility;
+  event_mode: EventMode;
   shared_with_followers: boolean;
   share_token: string | null;
   location: string | null;
@@ -117,4 +119,4 @@ export interface HiddenEvent {
 }
 
 export type CreateMode = 'reminder' | 'event';
-export type View = 'feed' | 'detail' | 'reminders' | 'create' | 'profile' | 'admin' | 'calendar';
+export type View = 'feed' | 'detail' | 'reminders' | 'create' | 'profile' | 'admin' | 'calendar' | 'insights';

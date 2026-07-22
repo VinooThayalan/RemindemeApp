@@ -4,6 +4,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { EventFeed } from './components/EventFeed';
 import { CreatePage } from './components/CreatePage';
 import { EventDetail } from './components/EventDetail';
+import { EventInsights } from './components/EventInsights';
 import { RemindersView } from './components/RemindersView';
 import { UserProfile } from './components/UserProfile';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -63,6 +64,16 @@ function AppContent() {
         event={selectedEvent}
         onBack={() => setView('feed')}
         onEventDeleted={() => setView('feed')}
+        onShowInsights={(ev) => { setSelectedEvent(ev); setView('insights'); }}
+      />
+    );
+  }
+
+  if (view === 'insights' && selectedEvent) {
+    return (
+      <EventInsights
+        event={selectedEvent}
+        onBack={() => setView('detail')}
       />
     );
   }

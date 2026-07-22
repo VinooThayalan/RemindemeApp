@@ -7,16 +7,17 @@ import {
   ChevronLeft, MapPin, Ticket, Users, FileText, Bell, Trash2,
   ExternalLink, Flag, EyeOff, X, Check, UserPlus, UserCheck, Share2, Clock, Globe,
   Globe2, Lock, UsersRound, Mail, Plus, Copy,
-  ListTree, Circle, CheckCircle2, CalendarClock,
+  ListTree, Circle, CheckCircle2, CalendarClock, Wifi, BarChart3,
 } from 'lucide-react';
 
 interface EventDetailProps {
   event: Event;
   onBack: () => void;
   onEventDeleted: () => void;
+  onShowInsights?: (event: Event) => void;
 }
 
-export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps) {
+export function EventDetail({ event, onBack, onEventDeleted, onShowInsights }: EventDetailProps) {
   const { user } = useAuth();
   const isOwner = user?.id === event.created_by;
 
@@ -39,7 +40,29 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
   const [subReminderLoading, setSubReminderLoading] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    // Track this view (fire and forget)
+    supabase.from('event_views').insert({
+      event_id: event.id,
+      viewer_id: user?.id ?? null,
+    }).then();
+
+    if (!user) {
+      // Still load sub-events and RSVP counts for non-logged-in users
+      const loadAnon = async () => {
+        const [subRes, rsvpAllRes] = await Promise.all([
+          supabase.from('sub_events').select('*').eq('event_id', event.id).order('sort_order', { ascending: true }),
+          supabase.from('event_rsvps').select('status').eq('event_id', event.id),
+        ]);
+        if (subRes.data) setSubEvents(subRes.data as SubEvent[]);
+        if (rsvpAllRes.data) {
+          const counts = { going: 0, maybe: 0, not_going: 0 } as Record<RsvpStatus, number>;
+          rsvpAllRes.data.forEach((r: { status: RsvpStatus }) => { counts[r.status]++; });
+          setRsvpCounts(counts);
+        }
+      };
+      loadAnon();
+      return;
+    }
     const load = async () => {
       const [reminderRes, profileRes] = await Promise.all([
         supabase
@@ -66,7 +89,6 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
           .maybeSingle();
         setIsFollowing(!!followData);
       }
-
       if (isOwner && event.visibility === 'closed') {
         const { data: inviteData } = await supabase
           .from('event_invitations')
@@ -200,7 +222,10 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-black/40 to-transparent" />
           <TopBar onBack={onBack} event={event} user={user} onHide={handleHide} onReport={() => setShowReportModal(true)} />
           <div className="absolute bottom-4 left-4 right-4">
-            <div className="mb-2"><EventVisibilityBadge visibility={event.visibility} /></div>
+            <div className="mb-2 flex items-center gap-2">
+              <EventVisibilityBadge visibility={event.visibility} />
+              <EventModeBadge mode={event.event_mode} />
+            </div>
             <h1 className="text-2xl font-bold text-white drop-shadow-lg leading-tight">{event.name}</h1>
           </div>
         </div>
@@ -212,7 +237,10 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
           }} />
           <TopBar onBack={onBack} event={event} user={user} onHide={handleHide} onReport={() => setShowReportModal(true)} />
           <div className="absolute bottom-4 left-4 right-4">
-            <div className="mb-2"><EventVisibilityBadge visibility={event.visibility} /></div>
+            <div className="mb-2 flex items-center gap-2">
+              <EventVisibilityBadge visibility={event.visibility} />
+              <EventModeBadge mode={event.event_mode} />
+            </div>
             <h1 className="text-2xl font-bold text-white drop-shadow-lg leading-tight">{event.name}</h1>
           </div>
         </div>
@@ -394,6 +422,17 @@ export function EventDetail({ event, onBack, onEventDeleted }: EventDetailProps)
               </button>
             )}
           </div>
+        )}
+
+        {/* Organizer insights link */}
+        {isOwner && onShowInsights && (
+          <button
+            onClick={() => onShowInsights(event)}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-slate-300 hover:bg-slate-700/60 hover:border-sky-600/40 font-semibold text-sm transition"
+          >
+            <BarChart3 size={16} className="text-sky-400" />
+            View Insights
+          </button>
         )}
 
         {/* Details */}
@@ -819,6 +858,21 @@ function EventVisibilityBadge({ visibility }: { visibility: string }) {
   return (
     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-sky-900/60 text-sky-300 text-[10px] font-semibold border border-sky-700/50 backdrop-blur-sm">
       <Lock size={10} /> Private Event
+    </span>
+  );
+}
+
+function EventModeBadge({ mode }: { mode: string }) {
+  if (mode === 'online') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-sky-900/60 text-sky-300 text-[10px] font-semibold border border-sky-700/50 backdrop-blur-sm">
+        <Wifi size={10} /> Online
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-900/60 text-emerald-300 text-[10px] font-semibold border border-emerald-700/50 backdrop-blur-sm">
+      <MapPin size={10} /> In Person
     </span>
   );
 }

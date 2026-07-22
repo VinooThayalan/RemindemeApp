@@ -1,13 +1,13 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import type { CreateMode, EventVisibility } from '../lib/types';
+import type { CreateMode, EventVisibility, EventMode } from '../lib/types';
 import { fromLocalInput, fromDateAndTime, formatFullDate, formatCountdown, COMMON_TIMEZONES } from '../lib/time';
 import {
   Camera, X, Check, ChevronLeft, Bell, CalendarPlus,
   MapPin, Link2, FileText, Users, StickyNote, Clock, Globe,
   Globe2, Lock, Mail, Plus, Share2, ScanLine, Loader2, Sparkles,
-  ListTree, Trash2,
+  ListTree, Trash2, Wifi, MapPin as MapPinIcon,
 } from 'lucide-react';
 
 interface CreatePageProps {
@@ -77,6 +77,7 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder' }: Crea
   const [notes, setNotes] = useState('');
 
   const [visibility, setVisibility] = useState<EventVisibility>('public');
+  const [eventMode, setEventMode] = useState<EventMode>('offline');
   const [sharedWithFollowers, setSharedWithFollowers] = useState(false);
   const [inviteEmails, setInviteEmails] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState('');
@@ -279,7 +280,7 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder' }: Crea
         timezone: timezone || null, location: location || null,
         ticket_url: ticketUrl || null, agenda: agenda || null,
         participants: participants || null, image_url: imageUrl,
-        visibility, shared_with_followers: visibility === 'private' ? sharedWithFollowers : false,
+        visibility, event_mode: eventMode, shared_with_followers: visibility === 'private' ? sharedWithFollowers : false,
       }).select().single();
 
       if (dbError) { setError(dbError.message); setSaving(false); return; }
@@ -629,6 +630,33 @@ export function CreatePage({ onBack, onCreated, initialMode = 'reminder' }: Crea
                 ))}
               </select>
             </Field>
+
+            {/* Event mode: online / offline */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 px-1">Delivery</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: 'offline', label: 'In Person', icon: <MapPinIcon size={16} className="text-emerald-400" /> },
+                  { value: 'online', label: 'Online', icon: <Wifi size={16} className="text-sky-400" /> },
+                ] as { value: EventMode; label: string; icon: React.ReactNode }[]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setEventMode(opt.value)}
+                    className={`rounded-xl border p-3.5 flex items-center gap-2.5 transition ${
+                      eventMode === opt.value
+                        ? 'bg-slate-700/60 border-sky-500'
+                        : 'bg-slate-800 border-slate-700 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="shrink-0 w-8 h-8 rounded-lg bg-slate-900/60 flex items-center justify-center">
+                      {opt.icon}
+                    </div>
+                    <span className={`text-sm font-semibold ${eventMode === opt.value ? 'text-white' : 'text-slate-300'}`}>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Visibility selector */}
             <div>

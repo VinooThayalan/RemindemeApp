@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import type { Event, RsvpStatus } from '../lib/types';
+import type { Event, RsvpStatus, EventMode } from '../lib/types';
 import { formatCountdown, formatDateTime } from '../lib/time';
-import { MapPin, Ticket, Users, Calendar, Search, SlidersHorizontal, Bell, Globe2, Lock, UsersRound, UserCheck } from 'lucide-react';
+import { MapPin, Ticket, Users, Calendar, Search, SlidersHorizontal, Bell, Globe2, Lock, UsersRound, UserCheck, Wifi } from 'lucide-react';
 
 interface EventFeedProps {
   onSelectEvent: (event: Event) => void;
@@ -266,6 +266,7 @@ function EventCard({
       <div className="p-4">
         <div className="flex items-center gap-2 mb-1">
           <VisibilityBadge visibility={event.visibility} />
+          <EventModeBadge mode={event.event_mode} />
         </div>
         <h3 className="font-bold text-white text-base leading-tight">{event.name}</h3>
         <div className="mt-2 space-y-1.5">
@@ -300,6 +301,21 @@ function EventCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function EventModeBadge({ mode }: { mode: EventMode }) {
+  if (mode === 'online') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-900/40 text-sky-400 text-[10px] font-semibold border border-sky-800/40">
+        <Wifi size={9} /> Online
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 text-[10px] font-semibold border border-emerald-800/40">
+      <MapPin size={9} /> In Person
+    </span>
   );
 }
 
